@@ -164,6 +164,7 @@ def one_energy(arr,ix,iy,nmax):
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
 #=======================================================================
+@nb.jit
 def all_energy(arr,nmax):
     """
     Arguments:
