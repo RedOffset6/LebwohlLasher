@@ -28,6 +28,7 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import numba as nb
 
 #=======================================================================
 def initdat(nmax):
@@ -128,6 +129,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
+@nb.jit
 def one_energy(arr,ix,iy,nmax):
     """
     Arguments:
