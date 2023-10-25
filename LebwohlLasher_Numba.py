@@ -182,6 +182,7 @@ def all_energy(arr,nmax):
             enall += one_energy(arr,i,j,nmax)
     return enall
 #=======================================================================
+@nb.jit
 def get_order(arr,nmax):
     """
     Arguments:
