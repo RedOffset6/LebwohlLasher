@@ -28,7 +28,6 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-import numba as nb
 
 #=======================================================================
 def initdat(nmax):
@@ -129,9 +128,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
-@nb.jit
 def one_energy(arr,ix,iy,nmax):
-    print("Hello")
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -210,31 +207,52 @@ def get_order(arr,nmax):
     eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
 #=======================================================================
-@nb.jit
-def MC_step(arr, Ts, nmax):
-    scale = 0.1 + Ts
+def MC_step(arr,Ts,nmax):
+    """
+    Arguments:
+	  arr (float(nmax,nmax)) = array that contains lattice data;
+	  Ts (float) = reduced temperature (range 0 to 2);
+      nmax (int) = side length of square lattice.
+    Description:
+      Function to perform one MC step, which consists of an average
+      of 1 attempted change per lattice site.  Working with reduced
+      temperature Ts = kT/epsilon.  Function returns the acceptance
+      ratio for information.  This is the fraction of attempted changes
+      that are successful.  Generally aim to keep this around 0.5 for
+      efficient simulation.
+	Returns:
+	  accept/(nmax**2) (float) = acceptance ratio for current MCS.
+    """
+    #
+    # Pre-compute some random numbers.  This is faster than
+    # using lots of individual calls.  "scale" sets the width
+    # of the distribution for the angle changes - increases
+    # with temperature.
+    scale=0.1+Ts
     accept = 0
-    xran = nb.random.randint(0, high=nmax, size=(nmax, nmax))
-    yran = nb.random.randint(0, high=nmax, size=(nmax, nmax))
-    aran = nb.random.normal(scale=scale, size=(nmax, nmax))
-    
-    for i in nb.prange(nmax):
-        for j in nb.prange(nmax):
-            ix = xran[i, j]
-            iy = yran[i, j]
-            ang = aran[i, j]
-            en0 = one_energy(arr, ix, iy, nmax)
-            arr[ix, iy] += ang
-            en1 = one_energy(arr, ix, iy, nmax)
-            if en1 <= en0:
+    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    for i in range(nmax):
+        for j in range(nmax):
+            ix = xran[i,j]
+            iy = yran[i,j]
+            ang = aran[i,j]
+            en0 = one_energy(arr,ix,iy,nmax)
+            arr[ix,iy] += ang
+            en1 = one_energy(arr,ix,iy,nmax)
+            if en1<=en0:
                 accept += 1
             else:
-                boltz = np.exp(-(en1 - en0) / Ts)
-                if boltz >= nb.random.uniform(0.0, 1.0):
+            # Now apply the Monte Carlo test - compare
+            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+                boltz = np.exp( -(en1 - en0) / Ts )
+
+                if boltz >= np.random.uniform(0.0,1.0):
                     accept += 1
                 else:
-                    arr[ix, iy] -= ang
-    return accept / (nmax * nmax)
+                    arr[ix,iy] -= ang
+    return accept/(nmax*nmax)
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
     """
