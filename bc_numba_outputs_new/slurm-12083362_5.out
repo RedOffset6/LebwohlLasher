@@ -1,0 +1,61 @@
+running numba environment test
+/user/home/jw20708/msci/computing/liquid_crystals/LebwohlLasher_Numba.py:185: NumbaWarning: 
+Compilation is falling back to object mode WITH looplifting enabled because Function "get_order" failed type inference due to: No implementation of function Function(<function eig at 0x2b1e3f73c9d0>) found for signature:
+ 
+ >>> eig(array(float64, 2d, C))
+ 
+There are 2 candidate implementations:
+  - Of which 2 did not match due to:
+  Overload in function 'eig_impl': File: numba/np/linalg.py: Line 944.
+    With argument(s): '(array(float64, 2d, C))':
+   Rejected as the implementation raised a specific error:
+     ImportError: scipy 0.16+ is required for linear algebra
+  raised from /user/home/jw20708/.conda/envs/desktop_clone_env/lib/python3.10/site-packages/numba/np/linalg.py:65
+
+During: resolving callee type: Function(<function eig at 0x2b1e3f73c9d0>)
+During: typing of call at /user/home/jw20708/msci/computing/liquid_crystals/LebwohlLasher_Numba.py (211)
+
+
+File "LebwohlLasher_Numba.py", line 211:
+def get_order(arr,nmax):
+    <source elided>
+    Qab = Qab/(2*nmax*nmax)
+    eigenvalues,eigenvectors = np.linalg.eig(Qab)
+    ^
+
+  @nb.jit
+/user/home/jw20708/msci/computing/liquid_crystals/LebwohlLasher_Numba.py:185: NumbaWarning: 
+Compilation is falling back to object mode WITHOUT looplifting enabled because Function "get_order" failed type inference due to: Cannot determine Numba type of <class 'numba.core.dispatcher.LiftedLoop'>
+
+File "LebwohlLasher_Numba.py", line 205:
+def get_order(arr,nmax):
+    <source elided>
+    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+    for a in range(3):
+    ^
+
+  @nb.jit
+/user/home/jw20708/.conda/envs/desktop_clone_env/lib/python3.10/site-packages/numba/core/object_mode_passes.py:151: NumbaWarning: Function "get_order" was compiled in object mode without forceobj=True, but has lifted loops.
+
+File "LebwohlLasher_Numba.py", line 198:
+def get_order(arr,nmax):
+    <source elided>
+    """
+    Qab = np.zeros((3,3))
+    ^
+
+  warnings.warn(errors.NumbaWarning(warn_msg,
+/user/home/jw20708/.conda/envs/desktop_clone_env/lib/python3.10/site-packages/numba/core/object_mode_passes.py:161: NumbaDeprecationWarning: 
+Fall-back from the nopython compilation path to the object mode compilation path has been detected, this is deprecated behaviour.
+
+For more information visit https://numba.readthedocs.io/en/stable/reference/deprecation.html#deprecation-of-object-mode-fall-back-behaviour-when-using-jit
+
+File "LebwohlLasher_Numba.py", line 198:
+def get_order(arr,nmax):
+    <source elided>
+    """
+    Qab = np.zeros((3,3))
+    ^
+
+  warnings.warn(errors.NumbaDeprecationWarning(msg,
+LebwohlLasher_Numba.py: Size: 125, Steps: 50, T*: 0.500: Order: 0.337, Time: 8.370444 s
