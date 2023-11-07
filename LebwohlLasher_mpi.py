@@ -26,8 +26,8 @@ import sys
 import time
 import datetime
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib as mpl
+#import matplotlib.pyplot as plt
+#import matplotlib as mpl
 from mpi4py import MPI
 
 #=======================================================================
@@ -110,24 +110,31 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
 	Returns:
 	  NULL
     """
-    # Create filename based on current date and time.
-    current_datetime = datetime.datetime.now().strftime("%a-%d-%b-%Y-at-%I-%M-%S%p")
-    filename = "LL-Output-{:s}.txt".format(current_datetime)
-    FileOut = open(filename,"w")
-    # Write a header with run parameters
-    print("#=====================================================",file=FileOut)
-    print("# File created:        {:s}".format(current_datetime),file=FileOut)
-    print("# Size of lattice:     {:d}x{:d}".format(nmax,nmax),file=FileOut)
-    print("# Number of MC steps:  {:d}".format(nsteps),file=FileOut)
-    print("# Reduced temperature: {:5.3f}".format(Ts),file=FileOut)
-    print("# Run time (s):        {:8.6f}".format(runtime),file=FileOut)
-    print("#=====================================================",file=FileOut)
-    print("# MC step:  Ratio:     Energy:   Order:",file=FileOut)
-    print("#=====================================================",file=FileOut)
-    # Write the columns of data
-    for i in range(nsteps+1):
-        print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
-    FileOut.close()
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    if rank == 0:
+        # Create filename based on current date and time.
+        current_datetime = datetime.datetime.now().strftime("%a-%d-%b-%Y-at-%I-%M-%S%p")
+        filename = "LL-Output-{:s}.txt".format(current_datetime)
+        FileOut = open(filename,"w")
+        # Write a header with run parameters
+
+        print("#=====================================================",file=FileOut)
+        print("# File created:        {:s}".format(current_datetime),file=FileOut)
+        print("# Size of lattice:     {:d}x{:d}".format(nmax,nmax),file=FileOut)
+        print("# Number of MC steps:  {:d}".format(nsteps),file=FileOut)
+        print("# Reduced temperature: {:5.3f}".format(Ts),file=FileOut)
+        print("# Run time (s):        {:8.6f}".format(runtime),file=FileOut)
+        print(f"# Number of Cores      {size}",file=FileOut)
+        print("#=====================================================",file=FileOut)
+        print("# MC step:  Ratio:     Energy:   Order:",file=FileOut)
+        print("#=====================================================",file=FileOut)
+        # Write the columns of data
+        for i in range(nsteps+1):
+            print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
+        FileOut.close()
 #=======================================================================
 def one_energy(arr,ix,iy,nmax):
     """
@@ -208,113 +215,128 @@ def get_order(arr,nmax):
     eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
 #=======================================================================
-def MC_step(arr,Ts,nmax):
+def MC_step(arr,Ts,nmax,comm, rank, size):
     """
     Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  Ts (float) = reduced temperature (range 0 to 2);
+      arr (float(nmax,nmax)) = array that contains lattice data;
+      Ts (float) = reduced temperature (range 0 to 2);
       nmax (int) = side length of square lattice.
+      comm (MPI comm object) = MPI communicator.
+      rank (int) = the cpu rank
+      size (int) = the number of mpi threads
     Description:
-      Function to perform one MC step, which consists of an average
-      of 1 attempted change per lattice site.  Working with reduced
-      temperature Ts = kT/epsilon.  Function returns the acceptance
-      ratio for information.  This is the fraction of attempted changes
-      that are successful.  Generally aim to keep this around 0.5 for
-      efficient simulation.
-	Returns:
-	  accept/(nmax**2) (float) = acceptance ratio for current MCS.
+      mpi version of MC_step
+    Returns:
+      accept/(local_nmax**2) (float) = acceptance ratio for current MCS.
     """
-    #
-    # Pre-compute some random numbers.  This is faster than
-    # using lots of individual calls.  "scale" sets the width
-    # of the distribution for the angle changes - increases
-    # with temperature.
-    scale=0.1+Ts
-    accept = 0
+    
+    #calculates local values for nmax depending on the size
+    local_nmax = nmax // size
+    
+    #calculates the start and end points of the region of the lattice that will be computed by this mpi thread
+    start = rank * local_nmax
+    if rank != size - 1:
+        end = (rank + 1) * local_nmax
+    else:
+        end = nmax
+
+    #initilises an acceptance ratio of 0
+    local_accept = 0
+    
+    #initilizes the arrays for xran and yran
     xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    aran = np.random.normal(scale=scale, size=(nmax,nmax))
-    for i in range(nmax):
+
+    #loops over a slice of the lattice
+    for i in range(start, end):
         for j in range(nmax):
             ix = xran[i,j]
             iy = yran[i,j]
-            ang = aran[i,j]
+            ang = np.random.normal(scale=0.1+Ts)
             en0 = one_energy(arr,ix,iy,nmax)
             arr[ix,iy] += ang
             en1 = one_energy(arr,ix,iy,nmax)
             if en1<=en0:
-                accept += 1
+                local_accept += 1
             else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
                 boltz = np.exp( -(en1 - en0) / Ts )
-
                 if boltz >= np.random.uniform(0.0,1.0):
-                    accept += 1
+                    local_accept += 1
                 else:
                     arr[ix,iy] -= ang
-    return accept/(nmax*nmax)
+
+    # do a reduction to bring together the acceptance ratios accross the processes
+    total_accept = comm.reduce(local_accept, op=MPI.SUM, root=0)
+
+    # rank 0 returns the acceptance ratio
+    if rank == 0:
+        return total_accept / (nmax**2)
+    else:
+        return None
+
 #=======================================================================
-def main(program, nsteps, nmax, temp, pflag):
+
+def main(program, nsteps, nmax, temp, pflag, comm, rank, size):
     """
     Arguments:
-	  program (string) = the name of the program;
-	  nsteps (int) = number of Monte Carlo steps (MCS) to perform;
-      nmax (int) = side length of square lattice to simulate;
-	  temp (float) = reduced temperature (range 0 to 2);
-	  pflag (int) = a flag to control plotting.
+        program (string) = the name of the program;
+        nsteps (int) = number of Monte Carlo steps (MCS) to perform;
+        nmax (int) = side length of square lattice to simulate;
+        temp (float) = reduced temperature (range 0 to 2);
+        pflag (int) = a flag to control plotting.
+        comm (MPI communicator) = MPI communicator.
     Description:
-      This is the main function running the Lebwohl-Lasher simulation.
+        This is the main function running the Lebwohl-Lasher simulation.
     Returns:
-      NULL
+        NULL
     """
     # Create and initialise lattice
     lattice = initdat(nmax)
-    # Plot initial frame of lattice
-    plotdat(lattice,pflag,nmax)
-    # Create arrays to store energy, acceptance ratio and order parameter
-    energy = np.zeros(nsteps+1,dtype=np.dtype)
-    ratio = np.zeros(nsteps+1,dtype=np.dtype)
-    order = np.zeros(nsteps+1,dtype=np.dtype)
-    # Set initial values in arrays
-    energy[0] = all_energy(lattice,nmax)
-    ratio[0] = 0.5 # ideal value
-    order[0] = get_order(lattice,nmax)
 
-    # Begin doing and timing some MC steps.
-    initial = time.time()
+    if rank == 0:
+        # Plot initial frame of lattice
+        #plotdat(lattice,pflag,nmax)
+        # Create arrays to store energy, acceptance ratio and order parameter
+        energy = np.zeros(nsteps+1,dtype=np.dtype)
+        ratio = np.zeros(nsteps+1,dtype=np.dtype)
+        order = np.zeros(nsteps+1,dtype=np.dtype)
+        # Set initial values in arrays
+        energy[0] = all_energy(lattice,nmax)
+        ratio[0] = 0.5 # ideal value
+        order[0] = get_order(lattice,nmax)
+        # Begin doing and timing some MC steps.
+        initial = time.time()
+
     for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,nmax)
-        energy[it] = all_energy(lattice,nmax)
-        order[it] = get_order(lattice,nmax)
-    final = time.time()
-    runtime = final-initial
+        accept_ratio = MC_step(lattice,temp,nmax,comm, rank, size)
+        if rank == 0:
+            ratio[it] = accept_ratio
+            energy[it] = all_energy(lattice,nmax)
+            order[it] = get_order(lattice,nmax)
+
+    if rank == 0:
+        final = time.time()
+        runtime = final-initial
+        # Final outputs
+        print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
+        # Plot final frame of lattice and generate output file
+        savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+        #plotdat(lattice,pflag,nmax)
 
 
+
+if __name__ == '__main__':
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
 
-    print(f"rank = {rank}")
-    print(f"size = {size}")
-    
-    # Final outputs
-    print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
-    # Plot final frame of lattice and generate output file
-    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    plotdat(lattice,pflag,nmax)
-#=======================================================================
-# Main part of program, getting command line arguments and calling
-# main simulation function.
-#
-if __name__ == '__main__':
     if int(len(sys.argv)) == 5:
         PROGNAME = sys.argv[0]
         ITERATIONS = int(sys.argv[1])
         SIZE = int(sys.argv[2])
         TEMPERATURE = float(sys.argv[3])
         PLOTFLAG = int(sys.argv[4])
-        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
+        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG, comm, rank, size)
     else:
-        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
+        print("Usage: mpiexec -n <num_processes> python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
 #=======================================================================
