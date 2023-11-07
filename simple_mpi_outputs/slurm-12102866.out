@@ -1,0 +1,6 @@
+running mpi test
+Before activation: /mnt/storage/software/languages/miniconda/miniconda3.11.3-CompressAI-Vision0.1.3/bin/python
+After activation: /user/home/jw20708/.conda/envs/desktop_clone_env/bin/python
+Intel(R) Parallel Studio XE 2020 Update 4 for Linux*
+Copyright 2009-2020 Intel Corporation.
+LebwohlLasher_mpi.py: Size: 500, Steps: 50, T*: 0.500: Order: 0.253, Time: 768.160492 s
