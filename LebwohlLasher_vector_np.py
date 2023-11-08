@@ -112,7 +112,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     """
     # Create filename based on current date and time.
     current_datetime = datetime.datetime.now().strftime("%a-%d-%b-%Y-at-%I-%M-%S%p")
-    filename = "numba_data/LL-Output-{:s}.txt".format(current_datetime)
+    filename = "LL-Output-{:s}.txt".format(current_datetime)
     FileOut = open(filename,"w")
     # Write a header with run parameters
     print("#=====================================================",file=FileOut)
@@ -129,7 +129,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
-@nb.jit
+#@nb.jit
 def one_energy(arr,ix,iy,nmax):
     """
     Arguments:
@@ -145,26 +145,27 @@ def one_energy(arr,ix,iy,nmax):
 	Returns:
 	  en (float) = reduced energy of cell.
     """
+
+    #My attempt at using numpy vectorisation to speed up this function
     en = 0.0
-    ixp = (ix+1)%nmax # These are the coordinates
-    ixm = (ix-1)%nmax # of the neighbours
-    iyp = (iy+1)%nmax # with wraparound
-    iym = (iy-1)%nmax #
-#
-# Add together the 4 neighbour contributions
-# to the energy
-#
-    ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ixp = (ix + 1) % nmax
+    ixm = (ix - 1) % nmax
+    iyp = (iy + 1) % nmax
+    iym = (iy - 1) % nmax
+
+    # Calculate the differences in angles with periodic boundaries
+    ang_diffs = arr[ix, iy] - np.array([
+        arr[ixp, iy],
+        arr[ixm, iy],
+        arr[ix, iyp],
+        arr[ix, iym]
+    ])
+
+    # Calculate the energy for each neighbor and sum them
+    en += 0.5 * np.sum(1.0 - 3.0 * np.cos(ang_diffs) ** 2)
     return en
+
 #=======================================================================
-@nb.jit
 def all_energy(arr,nmax):
     """
     Arguments:
@@ -176,13 +177,17 @@ def all_energy(arr,nmax):
 	Returns:
 	  enall (float) = reduced energy of lattice.
     """
-    enall = 0.0
-    for i in range(nmax):
-        for j in range(nmax):
-            enall += one_energy(arr,i,j,nmax)
+    # enall = 0.0
+    # for i in range(nmax):
+    #     for j in range(nmax):
+    #         enall += one_energy(arr,i,j,nmax)
+    # return enall
+
+    enall = np.sum(one_energy(arr, np.arange(nmax)[:, np.newaxis], np.arange(nmax)[np.newaxis, :], nmax))
     return enall
+
 #=======================================================================
-@nb.jit
+#@nb.jit
 def get_order(arr,nmax):
     """
     Arguments:
@@ -195,21 +200,39 @@ def get_order(arr,nmax):
 	Returns:
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
-    Qab = np.zeros((3,3))
-    delta = np.eye(3,3)
-    #
-    # Generate a 3D unit vector for each cell (i,j) and
-    # put it in a (3,i,j) array.
-    #
-    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
-    for a in range(3):
-        for b in range(3):
-            for i in range(nmax):
-                for j in range(nmax):
-                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
-    eigenvalues,eigenvectors = np.linalg.eig(Qab)
-    return eigenvalues.max()
+    # Qab = np.zeros((3,3))
+    # delta = np.eye(3,3)
+    # #
+    # # Generate a 3D unit vector for each cell (i,j) and
+    # # put it in a (3,i,j) array.
+    # #
+    # lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+    # for a in range(3):
+    #     for b in range(3):
+    #         for i in range(nmax):
+    #             for j in range(nmax):
+    #                 Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
+    # Qab = Qab/(2*nmax*nmax)
+    # eigenvalues,eigenvectors = np.linalg.eig(Qab)
+    # return eigenvalues.max()
+
+    # Calculate the 3D unit vectors for each cell
+    cos_arr = np.cos(arr)
+    sin_arr = np.sin(arr)
+    zeros_arr = np.zeros_like(arr)
+    lab = np.array([cos_arr, sin_arr, zeros_arr])
+
+    # Calculate the Q tensor elements efficiently
+    lab_reshaped = lab.reshape(3, nmax, nmax)
+    Qab = np.einsum('aik,bjk->abij', lab_reshaped, lab_reshaped)
+    Qab = 3 * Qab - np.eye(3)[:, :, np.newaxis, np.newaxis]
+    Qab = Qab.sum(axis=(2, 3)) / (2 * nmax * nmax)
+
+    # Calculate the eigenvalues and return the maximum
+    eigenvalues, _ = np.linalg.eig(Qab)
+    return eigenvalues.real.max()
+
+    
 #=======================================================================
 def MC_step(arr,Ts,nmax):
     """
@@ -290,6 +313,7 @@ def main(program, nsteps, nmax, temp, pflag):
         ratio[it] = MC_step(lattice,temp,nmax)
         energy[it] = all_energy(lattice,nmax)
         order[it] = get_order(lattice,nmax)
+
     final = time.time()
     runtime = final-initial
     
