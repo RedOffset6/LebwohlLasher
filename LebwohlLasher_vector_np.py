@@ -146,23 +146,23 @@ def one_energy(arr,ix,iy,nmax):
 	  en (float) = reduced energy of cell.
     """
 
-    #My attempt at using numpy vectorisation to speed up this function
     en = 0.0
-    ixp = (ix + 1) % nmax
-    ixm = (ix - 1) % nmax
-    iyp = (iy + 1) % nmax
-    iym = (iy - 1) % nmax
-
-    # Calculate the differences in angles with periodic boundaries
-    ang_diffs = arr[ix, iy] - np.array([
-        arr[ixp, iy],
-        arr[ixm, iy],
-        arr[ix, iyp],
-        arr[ix, iym]
-    ])
-
-    # Calculate the energy for each neighbor and sum them
-    en += 0.5 * np.sum(1.0 - 3.0 * np.cos(ang_diffs) ** 2)
+    ixp = (ix+1)%nmax # These are the coordinates
+    ixm = (ix-1)%nmax # of the neighbours
+    iyp = (iy+1)%nmax # with wraparound
+    iym = (iy-1)%nmax #
+#
+# Add together the 4 neighbour contributions
+# to the energy
+#
+    ang = arr[ix,iy]-arr[ixp,iy]
+    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ixm,iy]
+    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ix,iyp]
+    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ix,iym]
+    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
 
 #=======================================================================
