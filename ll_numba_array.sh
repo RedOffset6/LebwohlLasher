@@ -2,12 +2,12 @@
 
 #SBATCH --account=PHYS030544
 #SBATCH --job-name=Ben_LL
-#SBATCH --partition=test
+#SBATCH --partition=teach_cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --mem=900M
-#SBATCH --time=0:05:00
-
+#SBATCH --mem=5GB
+#SBATCH --time=0:30:00
+#SBATCH --array=1-10
 
 echo 'running numba environment test'
 
@@ -22,4 +22,6 @@ source activate desktop_clone_env
 
 #echo "After activation: $(which python)"
 
-python LebwohlLasher_Numba.py 50 50 0.5 0
+size=$((SLURM_ARRAY_TASK_ID*75))
+
+python LebwohlLasher_Numba.py 50 $size 0.5 0
